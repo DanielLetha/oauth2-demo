@@ -5,9 +5,12 @@ import org.apache.oltu.oauth2.client.URLConnectionClient;
 import org.apache.oltu.oauth2.client.request.OAuthBearerClientRequest;
 import org.apache.oltu.oauth2.client.request.OAuthClientRequest;
 import org.apache.oltu.oauth2.client.response.OAuthAccessTokenResponse;
+import org.apache.oltu.oauth2.client.response.OAuthJSONAccessTokenResponse;
 import org.apache.oltu.oauth2.client.response.OAuthResourceResponse;
 import org.apache.oltu.oauth2.common.OAuth;
 import org.apache.oltu.oauth2.common.message.types.GrantType;
+import org.apache.oltu.oauth2.common.utils.JSONUtils;
+import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authc.AuthenticationException;
 import org.apache.shiro.authc.AuthenticationInfo;
 import org.apache.shiro.authc.AuthenticationToken;
@@ -15,7 +18,13 @@ import org.apache.shiro.authc.SimpleAuthenticationInfo;
 import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.authz.SimpleAuthorizationInfo;
 import org.apache.shiro.realm.AuthorizingRealm;
+import org.apache.shiro.session.Session;
 import org.apache.shiro.subject.PrincipalCollection;
+import org.apache.shiro.subject.Subject;
+import org.codehaus.jettison.json.JSONString;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * <p>User: Zhang Kaitao
@@ -65,7 +74,15 @@ public class OAuth2Realm extends AuthorizingRealm {
     protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) throws AuthenticationException {
         OAuth2Token oAuth2Token = (OAuth2Token) token;
         String code = oAuth2Token.getAuthCode();
-        String username = extractUsername(code);
+        Subject currentUser = SecurityUtils.getSubject();
+        Session session = currentUser.getSession();
+        if (code != null) {
+            session.setAttribute("code", code);
+        } else {
+            code = (String) session.getAttribute("code");
+        }
+
+         String username = extractUsername(code);
 
         SimpleAuthenticationInfo authenticationInfo =
                 new SimpleAuthenticationInfo(username, code, getName());
@@ -75,6 +92,7 @@ public class OAuth2Realm extends AuthorizingRealm {
     private String extractUsername(String code) {
 
         try {
+
             OAuthClient oAuthClient = new OAuthClient(new URLConnectionClient());
 
             OAuthClientRequest accessTokenRequest = OAuthClientRequest
@@ -86,7 +104,12 @@ public class OAuth2Realm extends AuthorizingRealm {
                     .setRedirectURI(redirectUrl)
                     .buildQueryMessage();
 
-            OAuthAccessTokenResponse oAuthResponse = oAuthClient.accessToken(accessTokenRequest, OAuth.HttpMethod.POST);
+            if(!accessTokenRequest.getHeaders().isEmpty()){
+                Map<String,Object> header1 =  new HashMap<String, Object>();
+                header1.putAll(accessTokenRequest.getHeaders());
+                accessTokenRequest.setBody(JSONUtils.buildJSON(header1));
+            }
+            OAuthJSONAccessTokenResponse oAuthResponse = oAuthClient.accessToken(accessTokenRequest, OAuth.HttpMethod.POST);
 
             String accessToken = oAuthResponse.getAccessToken();
             Long expiresIn = oAuthResponse.getExpiresIn();
